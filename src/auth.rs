@@ -28,13 +28,21 @@ fn get_epoch_s() -> u64 {
         .as_secs()
 }
 
-const CHROMEDRIVER_PORT: u16 = 35101;
+const GECKODRIVER_PORT: u16 = 35101;
 
-fn start_chromedriver(port: u16) -> std::io::Result<Child> {
-    Command::new(std::option_env!("CHROMEDRIVER_PATH").unwrap_or("chromedriver"))
+fn project_dirs() -> ProjectDirs {
+    return ProjectDirs::from("", "ianterzo", "squads").unwrap()
+}
+
+fn start_geckodriver(port: u16) -> std::io::Result<Child> {
+    let mut data_dir = project_dirs().data_dir().to_path_buf();
+    data_dir.push("firefox-profile");
+    std::fs::create_dir_all(&data_dir);
+
+    Command::new(std::option_env!("GECKODRIVER_PATH").unwrap_or("geckodriver"))
         .arg(format!("--port={}", port))
-        .stdout(std::process::Stdio::null()) // Redirect output if needed
-        .stderr(std::process::Stdio::null())
+        .arg(format!("--binary={}", std::option_env!("FIREFOX_PATH").unwrap_or("firefox")))
+        .arg(format!("--profile-root={}", data_dir.to_str().unwrap()))
         .spawn()
 }
 
@@ -61,29 +69,18 @@ async fn get_auth_code(challenge: String) -> WebDriverResult<String> {
         .finish();
     let auth_url = format!("{}?{}", base_url, encoded_params);
 
-    let project_dirs = ProjectDirs::from("", "ianterzo", "squads");
-    let mut cache_dir = project_dirs.unwrap().cache_dir().to_path_buf();
-    cache_dir.push("chrome-data");
-    let dir = cache_dir.to_str().unwrap();
-
-    let mut chrome_options = DesiredCapabilities::chrome();
-    chrome_options.add_arg(&format!("--app={}", auth_url))?;
-    chrome_options.add_arg(&format!("--user-data-dir={}", dir))?;
-    chrome_options.add_arg("--window-size=550,500")?;
-    chrome_options.add_arg("--disable-infobars")?;
-    chrome_options.add_experimental_option("excludeSwitches", vec!["enable-automation"])?;
-    const CHROMEDRIVER_PATH: Option<&str> = std::option_env!("CHROMEDRIVER_PATH");
-    if CHROMEDRIVER_PATH.is_some() {
-        chrome_options.set_binary(CHROMEDRIVER_PATH.unwrap())?;
-    }
+    let mut gecko_options = DesiredCapabilities::firefox();
+    gecko_options.set_firefox_binary(std::option_env!("FIREFOX_PATH").unwrap_or("firefox"))?;
 
     // Start WebDriver
 
     let driver = WebDriver::new(
-        format!("http://localhost:{CHROMEDRIVER_PORT}"),
-        chrome_options,
+        format!("http://localhost:{GECKODRIVER_PORT}"),
+        gecko_options,
     )
     .await?;
+
+    driver.goto(auth_url).await;
 
     loop {
         sleep(Duration::from_millis(250)).await;
@@ -138,16 +135,16 @@ pub fn authorize() -> Result<AuthorizationCode, String> {
         .build()
         .map_err(|e| format!("Failed to build runtime: {:?}", e))?;
 
-    let mut chromedriver = start_chromedriver(CHROMEDRIVER_PORT)
-        .map_err(|e| format!("Failed to start chromedriver: {:?}", e))?;
+    let mut geckodriver = start_geckodriver(GECKODRIVER_PORT)
+        .map_err(|e| format!("Failed to start geckodriver: {:?}", e))?;
 
     let code = rt
         .block_on(get_auth_code(challenge.clone()))
         .map_err(|e| format!("Error while getting auth code: {:?}", e));
 
-    chromedriver
+    geckodriver
         .kill()
-        .map_err(|e| format!("Failed to kill chromedriver: {:?}", e))?;
+        .map_err(|e| format!("Failed to kill geckodriver: {:?}", e))?;
 
     code.map(|code| AuthorizationCode {
         code,

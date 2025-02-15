@@ -4,7 +4,8 @@
 , llvmPackages
 , mold
 , lib
-, chromedriver
+, geckodriver
+, firefox
 , openssl
 , wayland
 , libGL
@@ -30,7 +31,8 @@ rustPlatform.buildRustPackage {
     wayland
   ];
   env = {
-    CHROMEDRIVER_PATH = chromedriver |> lib.getExe;
+    GECKODRIVER_PATH = geckodriver |> lib.getExe;
+    FIREFOX_PATH = firefox |> lib.getExe;
   };
   postFixup = ''
     wrapProgram $out/bin/squads-iced --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [openssl wayland libGL libxkbcommon]}
