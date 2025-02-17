@@ -67,6 +67,21 @@ pub struct File {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct EmotionUser {
+    pub mri: String,
+    pub time: u64,
+    pub value: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Emotion {
+    pub key: String,
+    pub users: Vec<EmotionUser>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageProperties {
     #[serde(default)]
     #[serde(deserialize_with = "string_to_i64")]
@@ -81,7 +96,8 @@ pub struct MessageProperties {
     #[serde(default)]
     #[serde(deserialize_with = "string_to_bool")]
     pub systemdelete: bool,
-    pub title: Option<String>, // pub emotions: Vec<>
+    pub title: Option<String>,
+    pub emotions: Option<Vec<Emotion>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -90,11 +106,11 @@ pub struct Message {
     pub content: Option<String>,
     pub from: Option<String>,
     pub im_display_name: Option<String>,
-    pub message_type: String,
+    pub message_type: Option<String>,
     pub properties: Option<MessageProperties>,
     pub compose_time: Option<String>,
     pub original_arrival_time: Option<String>,
-    pub id: String,
+    pub id: Option<String>,
     pub container_id: Option<String>,
 }
 
@@ -569,8 +585,22 @@ pub fn user_details(token: AccessToken) -> Result<UserDetails, String> {
         .unwrap();
 
     if res.status().is_success() {
-        let parsed = res.json::<UserDetails>().unwrap();
-        Ok(parsed)
+        let body = res.text().unwrap();
+        let parsed_body: Value = serde_json::from_str(&body).expect("Invalid JSON");
+        let pretty_json =
+            serde_json::to_string_pretty(&parsed_body).expect("Failed to format JSON");
+        let result: Result<UserDetails, serde_json::Error> = serde_json::from_str(&pretty_json);
+
+        match result {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                println!("Error occurred while serializing: {}", err);
+                let line_content = pretty_json.lines().nth(err.line() - 1).unwrap();
+                println!("Line: {}", line_content);
+
+                Err(err.to_string())
+            }
+        }
     } else {
         let error_message = format!(
             "Status code: {}, Response body: {}",
